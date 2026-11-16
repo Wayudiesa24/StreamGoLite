@@ -237,7 +237,9 @@ public class MainActivity extends Activity {
             return false;
         });
         body.addView(search);
-        gap(body, 28);
+        gap(body, 18);
+        accountCard(body);
+        gap(body, 26);
         heading(body, "Explore topics", "Pick something to enjoy");
         gap(body, 15);
         String[][] topics = {
@@ -293,6 +295,27 @@ public class MainActivity extends Activity {
     private JSONArray json(String key) {
         try { return new JSONArray(prefs.getString(key, "[]")); }
         catch (Exception e) { return new JSONArray(); }
+    }
+
+    private void accountCard(LinearLayout body) {
+        LinearLayout card = column();
+        card.setPadding(d(18), d(17), d(18), d(18));
+        card.setBackground(shape(dark ? Color.parseColor("#29274A") : Color.parseColor("#EEEAFE"), 19, Color.TRANSPARENT));
+        card.addView(text("YOUR YOUTUBE ACCOUNT", 11, true, accent));
+        gap(card, 7);
+        card.addView(text("Sign in safely. Keep your favourites.", 17, true, ink));
+        gap(card, 6);
+        card.addView(text("Open YouTube through Chrome. If you have Premium, YouTube can recognise your subscription there. Your password stays with Google.", 12, false, muted));
+        gap(card, 14);
+        card.addView(action("YouTube · sign in", () -> accountTab(HOME_URL), true));
+        gap(card, 12);
+        LinearLayout quick = row();
+        quick.addView(action("Subscriptions", () -> accountTab(SUBSCRIPTIONS_URL), false));
+        quick.addView(action("My YouTube", () -> accountTab(LIBRARY_URL), false));
+        card.addView(quick);
+        body.addView(card);
+        gap(body, 9);
+        body.addView(text(usesAccountMode() ? "Browsing: signed-in Chrome mode" : "Browsing: lightweight internal mode", 12, false, muted));
     }
 
     private boolean usesAccountMode() {
@@ -519,25 +542,8 @@ public class MainActivity extends Activity {
     }
 
     private void bookmark() {
-        String address = current();
-        if (!isYoutube(address)) return;
-        JSONArray old = json(SAVED_KEY);
-        JSONArray next = new JSONArray();
-        JSONObject record = new JSONObject();
-        try {
-            String name = web.getTitle();
-            record.put("url", address);
-            record.put("title", name == null || name.isEmpty() ? "YouTube video" : name);
-            next.put(record);
-            for (int i = 0; i < old.length() && next.length() < 80; i++) {
-                JSONObject item = old.optJSONObject(i);
-                if (item != null && !address.equals(item.optString("url"))) next.put(item);
-            }
-            prefs.edit().putString(SAVED_KEY, next.toString()).apply();
-            Toast.makeText(this, "Saved on your phone", Toast.LENGTH_SHORT).show();
-        } catch (JSONException e) {
-            Toast.makeText(this, "Unable to save link", Toast.LENGTH_SHORT).show();
-        }
+        storeBookmark(current(), web == null ? "YouTube link" : web.getTitle());
+        Toast.makeText(this, "Saved on your phone", Toast.LENGTH_SHORT).show();
     }
 
     private void removeBookmark(String address) {
@@ -554,6 +560,8 @@ public class MainActivity extends Activity {
     private void saved() {
         LinearLayout body = content();
         heading(body, "Saved videos", "Your saved YouTube links stay on this device");
+        gap(body, 12);
+        body.addView(text("In signed-in mode, tap Share on a YouTube video and choose StreamGo Lite Beta to save its link here.", 12, false, muted));
         gap(body, 21);
         JSONArray list = json(SAVED_KEY);
         if (list.length() == 0) {
@@ -612,9 +620,18 @@ public class MainActivity extends Activity {
         LinearLayout body = content();
         heading(body, "Settings", "Make StreamGo Lite your own");
         gap(body, 25);
+        settingToggle(body, "Signed-in Chrome mode", "Recommended: account browsing uses Chrome instead of the internal viewer", ACCOUNT_MODE_KEY);
         settingToggle(body, "Dark mode", "A darker look for evening viewing", "dark");
         settingToggle(body, "Hide thumbnails", "Experimental: reduces browsing images, not video data", "hide_images");
-        gap(body, 9);
+        gap(body, 5);
+        body.addView(action("Sign in to YouTube", () -> accountTab(HOME_URL), true));
+        gap(body, 10);
+        body.addView(action("Subscriptions", () -> accountTab(SUBSCRIPTIONS_URL), false));
+        gap(body, 10);
+        body.addView(action("My YouTube library", () -> accountTab(LIBRARY_URL), false));
+        gap(body, 12);
+        body.addView(text("Chrome tabs share Chrome's YouTube sign-in, never the internal WebView. Premium benefits require an active subscription. Use the official YouTube app for background play and offline downloads.", 12, false, muted));
+        gap(body, 14);
         body.addView(action("Clear recent searches", () -> {
             prefs.edit().remove(RECENT_KEY).apply();
             Toast.makeText(this, "Search history cleared", Toast.LENGTH_SHORT).show();
@@ -622,7 +639,7 @@ public class MainActivity extends Activity {
         gap(body, 12);
         body.addView(action("Open official YouTube", () -> external(HOME_URL), true));
         gap(body, 24);
-        body.addView(text("StreamGo Lite is an independent viewer of YouTube's website. Playback, sign-in, ad experience, and video quality remain controlled by YouTube. Offline downloads are not included.", 13, false, muted));
+        body.addView(text("StreamGo Lite Beta 2.0 is an independent companion, not affiliated with Google or YouTube. StreamGo cannot read your Google password or Chrome cookies.", 13, false, muted));
         navbar();
     }
 
