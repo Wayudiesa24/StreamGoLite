@@ -1,6 +1,8 @@
 package com.wayudiesa.streamgolite;
 
 import android.app.Activity;
+import android.app.AlertDialog;
+import androidx.browser.customtabs.CustomTabsIntent;
 import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
@@ -36,12 +38,17 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /** Independent lightweight YouTube mobile website companion. */
 public class MainActivity extends Activity {
     private static final String HOME_URL = "https://m.youtube.com/";
     private static final String SAVED_KEY = "saved";
     private static final String RECENT_KEY = "recent";
+    private static final String ACCOUNT_MODE_KEY = "account_mode";
+    private static final String SUBSCRIPTIONS_URL = "https://m.youtube.com/feed/subscriptions";
+    private static final String LIBRARY_URL = "https://m.youtube.com/feed/you";
     private static final int DISCOVER = 0, SAVED = 1, SETTINGS = 2, BROWSER = 3;
     private SharedPreferences prefs;
     private LinearLayout root;
@@ -57,7 +64,7 @@ public class MainActivity extends Activity {
         super.onCreate(state);
         prefs = getSharedPreferences("streamgo", MODE_PRIVATE);
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
-        show();
+        if (!acceptSharedLink(getIntent())) show();
     }
 
     private int d(int value) {
@@ -288,6 +295,83 @@ public class MainActivity extends Activity {
         catch (Exception e) { return new JSONArray(); }
     }
 
+    private boolean usesAccountMode() {
+        return prefs.getBoolean(ACCOUNT_MODE_KEY, true);
+    }
+
+    private void accountTab(String address) {
+        if (!isYoutube(address)) return;
+        Uri uri = Uri.parse(address);
+        try {
+            CustomTabsIntent tabs = new CustomTabsIntent.Builder()
+                    .setShowTitle(true)
+                    .setToolbarColor(accent)
+                    .setShareState(CustomTabsIntent.SHARE_STATE_ON)
+                    .build();
+            // Chrome Custom Tabs can share Chrome sign-in, without giving StreamGo access to cookies.
+            tabs.intent.setPackage("com.android.chrome");
+            try {
+                tabs.launchUrl(this, uri);
+            } catch (ActivityNotFoundException chromeMissing) {
+                tabs.intent.setPackage(null);
+                tabs.launchUrl(this, uri);
+            }
+        } catch (Exception unavailable) {
+            try {
+                Intent browser = new Intent(Intent.ACTION_VIEW, uri);
+                browser.setPackage("com.android.chrome");
+                startActivity(browser);
+            } catch (Exception e) {
+                try { startActivity(new Intent(Intent.ACTION_VIEW, uri)); }
+                catch (Exception ignored) {
+                    Toast.makeText(this, "No browser available to sign in", Toast.LENGTH_LONG).show();
+                }
+            }
+        }
+    }
+
+    private boolean acceptSharedLink(Intent intent) {
+        if (intent == null || !Intent.ACTION_SEND.equals(intent.getAction())) return false;
+        if (!"text/plain".equals(intent.getType())) return false;
+        String shared = intent.getStringExtra(Intent.EXTRA_TEXT);
+        if (shared == null) return false;
+        Matcher matcher = Pattern.compile("https://[^\\s<>]+", Pattern.CASE_INSENSITIVE).matcher(shared);
+        while (matcher.find()) {
+            String candidate = matcher.group().replaceAll("[),.!?]+$", "");
+            if (isYoutube(candidate)) {
+                storeBookmark(candidate, "Shared YouTube link");
+                page = SAVED;
+                show();
+                Toast.makeText(this, "YouTube link saved", Toast.LENGTH_SHORT).show();
+                return true;
+            }
+        }
+        Toast.makeText(this, "No valid YouTube link was shared", Toast.LENGTH_SHORT).show();
+        return false;
+    }
+
+    @Override protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        acceptSharedLink(intent);
+    }
+
+    private void storeBookmark(String address, String title) {
+        if (!isYoutube(address)) return;
+        JSONArray old = json(SAVED_KEY), next = new JSONArray();
+        try {
+            JSONObject record = new JSONObject();
+            record.put("url", address);
+            record.put("title", title == null || title.isEmpty() ? "YouTube link" : title);
+            next.put(record);
+            for (int i = 0; i < old.length() && next.length() < 80; i++) {
+                JSONObject item = old.optJSONObject(i);
+                if (item != null && !address.equals(item.optString("url"))) next.put(item);
+            }
+            prefs.edit().putString(SAVED_KEY, next.toString()).apply();
+        } catch (JSONException ignored) { }
+    }
+
     private void search(String query) {
         JSONArray old = json(RECENT_KEY);
         JSONArray next = new JSONArray();
@@ -316,6 +400,10 @@ public class MainActivity extends Activity {
     private void open(String address) {
         if (!isYoutube(address)) {
             Toast.makeText(this, "Only secure YouTube links are supported", Toast.LENGTH_LONG).show();
+            return;
+        }
+        if (usesAccountMode()) {
+            accountTab(address);
             return;
         }
         page = BROWSER;
@@ -385,6 +473,7 @@ public class MainActivity extends Activity {
         browserLabel.setPadding(d(12), 0, d(6), 0);
         top.addView(browserLabel, new LinearLayout.LayoutParams(0, -2, 1));
         top.addView(action("☆", this::bookmark, false));
+        top.addView(action("Chrome", () -> accountTab(current()), false));
         top.addView(action("↗", () -> external(current()), false));
         root.addView(top);
         if (web.getParent() instanceof ViewGroup) ((ViewGroup)web.getParent()).removeView(web);
