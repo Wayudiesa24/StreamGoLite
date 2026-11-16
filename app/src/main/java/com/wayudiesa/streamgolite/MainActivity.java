@@ -602,7 +602,7 @@ public class MainActivity extends Activity {
         labels.addView(text(detail, 12, false, muted));
         item.addView(labels, new LinearLayout.LayoutParams(0, -2, 1));
         Switch toggle = new Switch(this);
-        toggle.setChecked(prefs.getBoolean(key, false));
+        toggle.setChecked(prefs.getBoolean(key, key.equals(ACCOUNT_MODE_KEY)));
         toggle.setOnCheckedChangeListener((button, checked) -> {
             prefs.edit().putBoolean(key, checked).apply();
             if (key.equals("hide_images") && web != null)
