@@ -452,6 +452,73 @@ public class MainActivity extends Activity {
         web.loadUrl(address);
     }
 
+    private boolean canUseVideoPip() {
+        return page == BROWSER && customView != null &&
+               prefs.getBoolean(PIP_ENABLED_KEY, true);
+    }
+
+    private PictureInPictureParams pipParams(boolean autoEnter) {
+        PictureInPictureParams.Builder builder = new PictureInPictureParams.Builder()
+                .setAspectRatio(new Rational(16, 9));
+        if (customView != null) {
+            Rect bounds = new Rect();
+            if (customView.getGlobalVisibleRect(bounds) && !bounds.isEmpty())
+                builder.setSourceRectHint(bounds);
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            builder.setAutoEnterEnabled(autoEnter);
+            builder.setSeamlessResizeEnabled(true);
+        }
+        return builder.build();
+    }
+
+    private void updatePipParams() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
+        try {
+            boolean auto = canUseVideoPip() && prefs.getBoolean(PIP_AUTO_KEY, true);
+            setPictureInPictureParams(pipParams(auto));
+        } catch (Exception ignored) { }
+    }
+
+    private void requestVideoPip() {
+        if (!canUseVideoPip()) {
+            Toast.makeText(this,
+                "Switch to lightweight mode, play a video, and tap fullscreen first",
+                Toast.LENGTH_LONG).show();
+            return;
+        }
+        try {
+            enteringPip = true;
+            boolean entered = enterPictureInPictureMode(pipParams(false));
+            if (!entered) {
+                enteringPip = false;
+                Toast.makeText(this, "Allow picture-in-picture in Android app settings", Toast.LENGTH_LONG).show();
+            }
+        } catch (Exception e) {
+            enteringPip = false;
+            Toast.makeText(this, "PiP unavailable for this video or device", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    @Override protected void onUserLeaveHint() {
+        if (canUseVideoPip() && prefs.getBoolean(PIP_AUTO_KEY, true)) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+                requestVideoPip();
+            } else {
+                // Android 12+ automatically enters PiP via setAutoEnterEnabled.
+                enteringPip = true;
+            }
+        }
+        super.onUserLeaveHint();
+    }
+
+    @Override public void onPictureInPictureModeChanged(boolean inPip, Configuration config) {
+        super.onPictureInPictureModeChanged(inPip, config);
+        if (pipOverlay != null) pipOverlay.setVisibility(inPip ? View.GONE : View.VISIBLE);
+        enteringPip = inPip;
+        if (!inPip && web != null && page == BROWSER) web.onResume();
+    }
+
     private void ensureWeb() {
         if (web != null) return;
         web = new WebView(this);
@@ -483,6 +550,16 @@ public class MainActivity extends Activity {
                 decor.addView(customView, new ViewGroup.LayoutParams(-1, -1));
                 decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN |
                     View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
+                if (prefs.getBoolean(PIP_ENABLED_KEY, true) && decor instanceof FrameLayout) {
+                    TextView pip = action("▣ PiP", () -> requestVideoPip(), true);
+                    FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+                            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                            Gravity.TOP | Gravity.END);
+                    lp.setMargins(0, d(50), d(16), 0);
+                    ((FrameLayout) decor).addView(pip, lp);
+                    pipOverlay = pip;
+                }
+                updatePipParams();
             }
             @Override public void onHideCustomView() { exitFullscreen(); }
         });
@@ -490,10 +567,17 @@ public class MainActivity extends Activity {
 
     private void exitFullscreen() {
         if (customView == null) return;
-        ((ViewGroup)getWindow().getDecorView()).removeView(customView);
+        ViewGroup decor = (ViewGroup)getWindow().getDecorView();
+        if (pipOverlay != null) {
+            decor.removeView(pipOverlay);
+            pipOverlay = null;
+        }
+        decor.removeView(customView);
         customView = null;
         if (customCallback != null) customCallback.onCustomViewHidden();
         customCallback = null;
+        enteringPip = false;
+        updatePipParams();
         colors();
     }
 
@@ -695,7 +779,16 @@ public class MainActivity extends Activity {
 
     @Override protected void onPause() {
         super.onPause();
-        if (web != null) web.onPause();
+        // A PiP activity stays visible and must not suspend its WebView.
+        if (web != null && !enteringPip && !isInPictureInPictureMode()) web.onPause();
+    }
+
+    @Override protected void onStop() {
+        super.onStop();
+        if (!isInPictureInPictureMode()) {
+            enteringPip = false;
+            if (web != null) web.onPause();
+        }
     }
 
     @Override protected void onResume() {
