@@ -2,6 +2,12 @@ package com.wayudiesa.streamgolite;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.PictureInPictureParams;
+import android.os.Build;
+import android.graphics.Rect;
+import android.util.Rational;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import androidx.browser.customtabs.CustomTabsIntent;
 import android.content.ActivityNotFoundException;
 import android.content.Context;
@@ -47,6 +53,10 @@ public class MainActivity extends Activity {
     private static final String SAVED_KEY = "saved";
     private static final String RECENT_KEY = "recent";
     private static final String ACCOUNT_MODE_KEY = "account_mode";
+    private static final String PIP_ENABLED_KEY = "pip_enabled";
+    private static final String PIP_AUTO_KEY = "pip_auto";
+    private static final String WATCH_LATER_URL = "https://m.youtube.com/playlist?list=WL";
+    private static final String HISTORY_URL = "https://m.youtube.com/feed/history";
     private static final String SUBSCRIPTIONS_URL = "https://m.youtube.com/feed/subscriptions";
     private static final String LIBRARY_URL = "https://m.youtube.com/feed/you";
     private static final int DISCOVER = 0, SAVED = 1, SETTINGS = 2, BROWSER = 3;
@@ -54,6 +64,8 @@ public class MainActivity extends Activity {
     private LinearLayout root;
     private WebView web;
     private View customView;
+    private View pipOverlay;
+    private boolean enteringPip;
     private WebChromeClient.CustomViewCallback customCallback;
     private TextView browserLabel;
     private int page = DISCOVER;
@@ -313,6 +325,11 @@ public class MainActivity extends Activity {
         quick.addView(action("Subscriptions", () -> accountTab(SUBSCRIPTIONS_URL), false));
         quick.addView(action("My YouTube", () -> accountTab(LIBRARY_URL), false));
         card.addView(quick);
+        gap(card, 10);
+        LinearLayout saved = row();
+        saved.addView(action("Watch later", () -> accountTab(WATCH_LATER_URL), false));
+        saved.addView(action("History", () -> accountTab(HISTORY_URL), false));
+        card.addView(saved);
         body.addView(card);
         gap(body, 9);
         body.addView(text(usesAccountMode() ? "Browsing: signed-in Chrome mode" : "Browsing: lightweight internal mode", 12, false, muted));
@@ -496,6 +513,7 @@ public class MainActivity extends Activity {
         browserLabel.setPadding(d(12), 0, d(6), 0);
         top.addView(browserLabel, new LinearLayout.LayoutParams(0, -2, 1));
         top.addView(action("☆", this::bookmark, false));
+        top.addView(action("PiP", this::requestVideoPip, false));
         top.addView(action("Chrome", () -> accountTab(current()), false));
         top.addView(action("↗", () -> external(current()), false));
         root.addView(top);
@@ -507,8 +525,18 @@ public class MainActivity extends Activity {
         bottomItem(bottom, "‹ Back", this::browserBack);
         bottomItem(bottom, "⌂ Home", () -> go(DISCOVER));
         bottomItem(bottom, "↻ Reload", () -> web.reload());
+        bottomItem(bottom, "Share", this::shareCurrent);
         bottomItem(bottom, "↗ YouTube", () -> external(current()));
         root.addView(bottom);
+    }
+
+    private void shareCurrent() {
+        String url = current();
+        if (!isYoutube(url)) return;
+        Intent intent = new Intent(Intent.ACTION_SEND);
+        intent.setType("text/plain");
+        intent.putExtra(Intent.EXTRA_TEXT, url);
+        startActivity(Intent.createChooser(intent, "Share YouTube link"));
     }
 
     private void bottomItem(LinearLayout parent, String title, Runnable handler) {
@@ -602,11 +630,13 @@ public class MainActivity extends Activity {
         labels.addView(text(detail, 12, false, muted));
         item.addView(labels, new LinearLayout.LayoutParams(0, -2, 1));
         Switch toggle = new Switch(this);
-        toggle.setChecked(prefs.getBoolean(key, key.equals(ACCOUNT_MODE_KEY)));
+        toggle.setChecked(prefs.getBoolean(key, key.equals(ACCOUNT_MODE_KEY)
+                || key.equals(PIP_ENABLED_KEY) || key.equals(PIP_AUTO_KEY)));
         toggle.setOnCheckedChangeListener((button, checked) -> {
             prefs.edit().putBoolean(key, checked).apply();
             if (key.equals("hide_images") && web != null)
                 web.getSettings().setLoadsImagesAutomatically(!checked);
+            if (key.equals(PIP_AUTO_KEY) || key.equals(PIP_ENABLED_KEY)) updatePipParams();
             show();
         });
         item.addView(toggle);
@@ -623,12 +653,22 @@ public class MainActivity extends Activity {
         settingToggle(body, "Signed-in Chrome mode", "Recommended: account browsing uses Chrome instead of the internal viewer", ACCOUNT_MODE_KEY);
         settingToggle(body, "Dark mode", "A darker look for evening viewing", "dark");
         settingToggle(body, "Hide thumbnails", "Experimental: reduces browsing images, not video data", "hide_images");
+        gap(body, 7);
+        heading(body, "Picture-in-picture", "For videos in StreamGo's internal lightweight viewer");
+        gap(body, 12);
+        settingToggle(body, "Enable PiP", "Use the PiP button when the video is fullscreen", PIP_ENABLED_KEY);
+        settingToggle(body, "Auto PiP on Home", "When a video is fullscreen, send it to PiP as you return Home", PIP_AUTO_KEY);
+        body.addView(text("To try: switch off Signed-in Chrome mode, play a video, tap fullscreen, then tap PiP or return Home. Signed-in Chrome mode is controlled by Chrome; use Open official YouTube for its supported PiP.", 12, false, muted));
         gap(body, 5);
         body.addView(action("Sign in to YouTube", () -> accountTab(HOME_URL), true));
         gap(body, 10);
         body.addView(action("Subscriptions", () -> accountTab(SUBSCRIPTIONS_URL), false));
         gap(body, 10);
         body.addView(action("My YouTube library", () -> accountTab(LIBRARY_URL), false));
+        gap(body, 9);
+        body.addView(action("Watch Later", () -> accountTab(WATCH_LATER_URL), false));
+        gap(body, 9);
+        body.addView(action("Watch History", () -> accountTab(HISTORY_URL), false));
         gap(body, 12);
         body.addView(text("Chrome tabs share Chrome's YouTube sign-in, never the internal WebView. Premium benefits require an active subscription. Use the official YouTube app for background play and offline downloads.", 12, false, muted));
         gap(body, 14);
@@ -639,7 +679,7 @@ public class MainActivity extends Activity {
         gap(body, 12);
         body.addView(action("Open official YouTube", () -> external(HOME_URL), true));
         gap(body, 24);
-        body.addView(text("StreamGo Lite Beta 2.0 is an independent companion, not affiliated with Google or YouTube. StreamGo cannot read your Google password or Chrome cookies.", 13, false, muted));
+        body.addView(text("StreamGo Lite Beta 2.1 is an independent companion, not affiliated with Google or YouTube. StreamGo cannot read your Google password or Chrome cookies.", 13, false, muted));
         navbar();
     }
 
