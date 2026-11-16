@@ -2,6 +2,18 @@
 
 An **independent**, lightweight Android companion for YouTube's official web pages. Not affiliated with or endorsed by Google or YouTube.
 
+## Version 2.1 Beta — experimental picture-in-picture
+
+- **Fullscreen video PiP** in the internal lightweight viewer on Android 8+.
+- **Auto PiP on Home** enabled by default when an internal viewer video is fullscreen. Disable it in Settings if unwanted.
+- A **PiP** button appears over fullscreen video, with an additional PiP hint in the internal browser toolbar.
+- Watch Later and History shortcuts open YouTube in a signed-in Chrome tab.
+- Share a video link from the internal browser using Android's Share sheet.
+
+**How to try native PiP:** Settings → switch off "Signed-in Chrome mode" (this switches to the internal viewer) → open a video → tap video fullscreen → press the floating **PiP** button or swipe Home. Device PiP permission must be enabled. Browser video playback may be limited by YouTube, so Android PiP does not guarantee video playback will continue. Signed-in Chrome Custom Tabs are a separate browser activity and cannot be forced into PiP by StreamGo. Use the official YouTube app for supported PiP and Premium functionality.
+
+**Important installation note:** GitHub Actions generates a fresh debug signing key for each workflow run. An APK from this run may NOT install as an update over the installed Beta 2.0 app (Android will report a signing conflict). To install 2.1, you may have to uninstall Beta 2.0 first, which deletes its locally saved bookmarks/history. Your original v1 app is unaffected. A stable private signing setup is recommended before public distribution or automated updates.
+
 ## Version 2.0 Beta — signed-in browsing
 
 - **Signed-in Chrome mode (on by default)**: opens YouTube in a Chrome Custom Tab. Sign into YouTube using Google's own browser page. StreamGo never handles your password, tokens, or cookies.
